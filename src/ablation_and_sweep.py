@@ -1,11 +1,25 @@
-# Minimal working ablation + weight sweep demo.
-# Safe, lightweight: uses TF-IDF and synthetic signals to demonstrate process.
+﻿"""
+CI-friendly ablation + weight sweep script.
 
+Writes:
+- results/ablation_results_ci.csv
+- results/sweep_results_ci.csv
+
+Usage:
+  - Locally: python src/ablation_and_sweep.py --step 0.05 --top_k 5
+  - In CI the workflow below runs the default (step=0.05).
+"""
+from pathlib import Path
+import argparse
 import os
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+ROOT = Path(__file__).resolve().parents[1]
+RESULTS = ROOT / "results"
+RESULTS.mkdir(exist_ok=True)
 
 def precision_at_k(relevant_mask, retrieved_idx, k=5):
     retrieved_idx = list(retrieved_idx)[:k]
@@ -22,29 +36,23 @@ def ndcg_at_k(relevant_mask, retrieved_idx, k=5):
     return dcg / idcg if idcg > 0 else 0.0
 
 def load_or_make_sample():
-    path = "data/dataset_sample.csv"
-    if os.path.exists(path):
-        df = pd.read_csv(path)
-    else:
-        df = pd.DataFrame([
-            {"id":1,"title":"Machine Learning Advances in Education","text":"Recent developments in machine learning transform edtech.","language":"en","url":"u1","date":"2025-01-15","category":"technology"},
-            {"id":2,"title":"AI in Education (Arabic)","text":"?????? ?????? ????????? ?? ???????.", "language":"ar","url":"u2","date":"2025-01-14","category":"technology"},
-            {"id":3,"title":"Climate Effects on Crops","text":"Climate change reduces crop yields worldwide.","language":"en","url":"u3","date":"2025-01-12","category":"environment"},
-            {"id":4,"title":"Digital Health Revolution","text":"Telemedicine and digital health platforms change patient care.","language":"en","url":"u4","date":"2025-01-09","category":"health"},
-            {"id":5,"title":"Economic Recovery After Pandemic","text":"Policy responses shape global recovery.", "language":"en","url":"u5","date":"2025-01-06","category":"economics"},
-        ])
-    if "text" in df.columns:
-        df["text_all"] = df["title"].fillna("") + " . " + df["text"].fillna("")
-    else:
-        df["text_all"] = df["title"].fillna("")
+    # Small synthetic dataset for CI/demo. Replace with your dataset path if available.
+    df = pd.DataFrame([
+        {"id":1,"title":"Machine Learning Advances in Education","text":"Recent developments in machine learning transform edtech.","language":"en","url":"u1","date":"2025-01-15","category":"technology"},
+        {"id":2,"title":"AI in Education (Arabic)","text":"تطورات الذكاء الاصطناعي في التعليم.", "language":"ar","url":"u2","date":"2025-01-14","category":"technology"},
+        {"id":3,"title":"Climate Effects on Crops","text":"Climate change reduces crop yields worldwide.","language":"en","url":"u3","date":"2025-01-12","category":"environment"},
+        {"id":4,"title":"Digital Health Revolution","text":"Telemedicine and digital health platforms change patient care.","language":"en","url":"u4","date":"2025-01-09","category":"health"},
+        {"id":5,"title":"Economic Recovery After Pandemic","text":"Policy responses shape global recovery.", "language":"en","url":"u5","date":"2025-01-06","category":"economics"},
+    ])
+    df["text_all"] = df["title"].fillna("") + " . " + df["text"].fillna("")
     return df.reset_index(drop=True)
 
-def build_signals(df):
+def build_signals(df, random_seed=42):
     docs = df["text_all"].tolist()
     tfidf = TfidfVectorizer(max_features=2000, stop_words="english")
     mat = tfidf.fit_transform(docs)
     tfidf_sim = cosine_similarity(mat, mat)
-    rng = np.random.RandomState(42)
+    rng = np.random.RandomState(random_seed)
     noise_sbert = rng.normal(scale=0.02, size=tfidf_sim.shape)
     noise_bm25 = rng.normal(scale=0.03, size=tfidf_sim.shape)
     sbert_sim = np.clip(tfidf_sim + noise_sbert, 0.0, 1.0)
@@ -86,11 +94,11 @@ def run_experiments(step=0.05, top_k=5):
         ablation_rows.append({"method": name, "w_sbert": w[0], "w_tfidf": w[1], "w_bm25": w[2],
                               "prec_mean": p_mean, "prec_std": p_std, "ndcg_mean": n_mean, "ndcg_std": n_std})
     ablation_df = pd.DataFrame(ablation_rows)
-    os.makedirs("results", exist_ok=True)
-    ablation_df.to_csv("results/ablation_results_2.csv", index=False)
+    ablation_csv = RESULTS / "ablation_results_ci.csv"
+    ablation_df.to_csv(ablation_csv, index=False)
 
     sweep_rows = []
-    w_vals = np.arange(0.0, 1.0 + 1e-9, step)
+    w_vals = np.round(np.arange(0.0, 1.0 + 1e-9, step), 6)
     for w_s in w_vals:
         for w_t in w_vals:
             w_b = 1.0 - (w_s + w_t)
@@ -106,9 +114,15 @@ def run_experiments(step=0.05, top_k=5):
                                "prec_mean": p_mean, "prec_std": p_std, "ndcg_mean": n_mean, "ndcg_std": n_std})
     sweep_df = pd.DataFrame(sweep_rows)
     sweep_df = sweep_df.sort_values(by="ndcg_mean", ascending=False).reset_index(drop=True)
-    sweep_df.to_csv("results/sweep_results_2.csv", index=False)
-    print("Saved results/ablation_results_2.csv and results/sweep_results_2.csv")
+    sweep_csv = RESULTS / "sweep_results_ci.csv"
+    sweep_df.to_csv(sweep_csv, index=False)
+
+    print(f"Saved {ablation_csv} and {sweep_csv}")
     print("Top 5 weight combos by ndcg_mean:\n", sweep_df.head(5).to_string(index=False))
 
 if __name__ == "__main__":
-    run_experiments(step=0.05, top_k=5)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--step", type=float, default=0.05, help="grid step for weights")
+    parser.add_argument("--top_k", type=int, default=5, help="evaluation top-k")
+    args = parser.parse_args()
+    run_experiments(step=args.step, top_k=args.top_k)
