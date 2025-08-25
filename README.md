@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Multilingual News Recommendation for Educational Web Portals
 
 Authors: Przha Barzan 
@@ -40,3 +41,16 @@ Local run (optional):
 ```bash
 python src/ablation_and_sweep.py --step 0.05 --top_k 5
 python src/plot_sweep.py
+=======
+﻿# Multilingual News Recommendation for Educational Web Portals
+
+Authors: Przha Barzan, [Coauthors]  
+Repository for: 'A Multilingual Hybrid News Recommendation Framework for Educational Web Portals'
+
+## Quick start
+1. Clone repo
+2. Create virtual env: python -m venv .venv
+3. Activate and pip install -r requirements.txt
+
+Data: full dataset at: https://github.com/przhaB/Multilingual-News-Dataset
+>>>>>>> af6ac39 (Add CI sweep and plotting workflow)
